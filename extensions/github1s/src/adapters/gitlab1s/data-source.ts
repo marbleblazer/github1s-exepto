@@ -30,9 +30,8 @@ import {
 import { toUint8Array } from 'js-base64';
 import { matchSorter } from 'match-sorter';
 import { GitLabFetcher } from './fetcher';
-import { SourcegraphDataSource } from '../sourcegraph/data-source';
 import { decorate, memorize } from '@/helpers/func';
-import { trimStart, normalizePath, isString } from '@/helpers/util';
+import { trimStart, normalizePath } from '@/helpers/util';
 
 const FileTypeMap = {
 	blob: FileType.File,
@@ -63,21 +62,6 @@ const resolveComputeAge = (timestamps: number[], ageLimit = 10) => {
 	};
 };
 
-const sourcegraphDataSource = SourcegraphDataSource.getInstance('gitlab');
-const trySourcegraphApiFirst = (_target: any, propertyKey: string, descriptor: PropertyDescriptor) => {
-	const originalMethod = descriptor.value;
-
-	descriptor.value = async function <T extends (...args) => Promise<any>>(...args: Parameters<T>) {
-		const gitlabFetcher = GitLabFetcher.getInstance();
-		if (await gitlabFetcher.getPreferSourcegraphApi(args[0])) {
-			try {
-				return await sourcegraphDataSource[propertyKey](...args);
-			} catch (e) {}
-		}
-		return originalMethod.apply(this, args);
-	};
-};
-
 export class GitLab1sDataSource extends DataSource {
 	private static instance: GitLab1sDataSource | null = null;
 	private branchesPromiseMap: Map<string, Promise<Branch[]>> = new Map();
@@ -97,7 +81,6 @@ export class GitLab1sDataSource extends DataSource {
 		return { private: data.visibility === 'private', defaultBranch: data.default_branch };
 	}
 
-	@trySourcegraphApiFirst
 	async provideDirectory(repo: string, ref: string, path: string, recursive = false): Promise<Directory> {
 		const fetcher = GitLabFetcher.getInstance();
 		let page = 1;
@@ -125,7 +108,6 @@ export class GitLab1sDataSource extends DataSource {
 		};
 	}
 
-	@trySourcegraphApiFirst
 	async provideFile(repo: string, ref: string, path: string): Promise<File> {
 		const fetcher = GitLabFetcher.getInstance();
 		const requestParams = { ref, path: trimStart(path, '/'), repo };
@@ -162,7 +144,6 @@ export class GitLab1sDataSource extends DataSource {
 		return (await this.provideRepository(repo))?.defaultBranch || 'HEAD';
 	}
 
-	@trySourcegraphApiFirst
 	async extractRefPath(repo: string, refAndPath: string): Promise<{ ref: string; path: string }> {
 		if (!refAndPath) {
 			return { ref: await this.getDefaultBranch(repo), path: '/' };
@@ -189,7 +170,6 @@ export class GitLab1sDataSource extends DataSource {
 		return Promise.all([this.provideBranches(repo), this.provideTags(repo)]);
 	}
 
-	@trySourcegraphApiFirst
 	async provideBranches(repo: string, options?: CommonQueryOptions): Promise<Branch[]> {
 		if (!this.branchesPromiseMap.has(repo)) {
 			this.branchesPromiseMap.set(repo, this.getBranches(repo, 'heads'));
@@ -206,13 +186,11 @@ export class GitLab1sDataSource extends DataSource {
 		});
 	}
 
-	@trySourcegraphApiFirst
 	async provideBranch(repo: string, branchName: string): Promise<Branch | null> {
 		const branches = await this.provideBranches(repo);
 		return branches.find((item) => item.name === branchName) || null;
 	}
 
-	@trySourcegraphApiFirst
 	async provideTags(repoFullName: string, options?: CommonQueryOptions): Promise<Tag[]> {
 		if (!this.tagsPromiseMap.has(repoFullName)) {
 			this.tagsPromiseMap.set(repoFullName, this.getTags(repoFullName, 'tags'));
@@ -229,7 +207,6 @@ export class GitLab1sDataSource extends DataSource {
 		});
 	}
 
-	@trySourcegraphApiFirst
 	async provideTag(repoFullName: string, tagName: string): Promise<Tag | null> {
 		const tags = await this.provideTags(repoFullName);
 		return tags.find((item) => item.name === tagName) || null;
@@ -241,10 +218,9 @@ export class GitLab1sDataSource extends DataSource {
 		query: TextSearchQuery,
 		options: TextSearchOptions,
 	): Promise<TextSearchResults> {
-		return sourcegraphDataSource.provideTextSearchResults(repoFullName, ref, query, options);
+		return { results: [], truncated: false };
 	}
 
-	@trySourcegraphApiFirst
 	async provideCommits(repo: string, options?: CommitsQueryOptions): Promise<(Commit & { files?: ChangedFile[] })[]> {
 		const fetcher = GitLabFetcher.getInstance();
 		const queryParams = {
@@ -273,7 +249,6 @@ export class GitLab1sDataSource extends DataSource {
 		);
 	}
 
-	@trySourcegraphApiFirst
 	async provideCommit(repo: string, ref: string): Promise<Commit & { files?: ChangedFile[] }> {
 		const fetcher = GitLabFetcher.getInstance();
 		const requestParams = { repo, ref };
@@ -295,7 +270,6 @@ export class GitLab1sDataSource extends DataSource {
 		};
 	}
 
-	@trySourcegraphApiFirst
 	async provideCommitChangedFiles(repo: string, ref: string, options?: CommonQueryOptions): Promise<ChangedFile[]> {
 		const fetcher = GitLabFetcher.getInstance();
 		const requestParams = { repo, ref, per_page: options?.pageSize, page: options?.page };
@@ -389,7 +363,6 @@ export class GitLab1sDataSource extends DataSource {
 		}));
 	}
 
-	@trySourcegraphApiFirst
 	async provideFileBlameRanges(repo: string, ref: string, path: string): Promise<BlameRange[]> {
 		const fetcher = GitLabFetcher.getInstance();
 		const requestParams = { repo, ref, path: trimStart(path, '/') };
@@ -434,7 +407,7 @@ export class GitLab1sDataSource extends DataSource {
 		character: number,
 		symbol: string,
 	): Promise<SymbolDefinitions> {
-		return sourcegraphDataSource.provideSymbolDefinitions(repoFullName, ref, path, line, character, symbol);
+		return Promise.resolve([]);
 	}
 
 	async provideSymbolReferences(
@@ -445,7 +418,7 @@ export class GitLab1sDataSource extends DataSource {
 		character: number,
 		symbol: string,
 	): Promise<SymbolReferences> {
-		return sourcegraphDataSource.provideSymbolReferences(repoFullName, ref, path, line, character, symbol);
+		return Promise.resolve([]);
 	}
 
 	async provideSymbolHover(
@@ -456,10 +429,10 @@ export class GitLab1sDataSource extends DataSource {
 		character: number,
 		_symbol: string,
 	): Promise<SymbolHover | null> {
-		return sourcegraphDataSource.provideSymbolHover(repoFullName, ref, path, line, character, _symbol);
+		return Promise.resolve(null);
 	}
 
-	provideUserAvatarLink(user: string): string {
-		return `https://www.gravatar.com/avatar/${user}?d=identicon`;
+	provideUserAvatarLink(_user: string): string {
+		return '';
 	}
 }

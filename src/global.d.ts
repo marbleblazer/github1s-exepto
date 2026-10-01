@@ -7,12 +7,13 @@ declare module '*.svg' {
 }
 
 declare const DEV_VSCODE: boolean;
-declare const GITHUB_ORIGIN: string;
 declare const GITLAB_ORIGIN: string;
+declare const GATEWAY_ORIGIN: string;
+declare const GATEWAY_API_PREFIX: string;
+declare const GATEWAY_SESSION_PATH: string;
+declare const PLATFORM_ORIGIN: string;
 declare const GITHUB1S_EXTENSIONS: string;
 declare const AVAILABLE_LANGUAGES: string[];
-declare const GITHUB_OAUTH_ID: string;
-declare const GITLAB_OAUTH_ID: string;
 
 /* eslint-disable no-var */
 declare var dynamicImport: (url: string) => Promise<any>;

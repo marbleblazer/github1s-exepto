@@ -65,8 +65,12 @@ const scanVSCodeExtensions = () => {
 	return extensionFolders.map((item) => getExtensionData(path.join(extensionsPath, item))).filter(Boolean);
 };
 
+const SKIP_LOCAL_EXTENSIONS = new Set(['github1s-ai']);
+
 const scanGitHub1sExtensions = () => {
-	const extensions = fs.readdirSync(path.join(APP_ROOT, 'extensions'));
+	const extensions = fs
+		.readdirSync(path.join(APP_ROOT, 'extensions'))
+		.filter((item) => !SKIP_LOCAL_EXTENSIONS.has(item));
 	return extensions.map((item) => getExtensionData(path.join(APP_ROOT, 'extensions', item))).filter(Boolean);
 };
 

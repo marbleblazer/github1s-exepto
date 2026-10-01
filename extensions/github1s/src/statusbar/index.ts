@@ -1,12 +1,9 @@
 /**
- * @file decorate footer
- * @author netcon
+ * @file Status bar
  */
 
 import { updateCheckoutTo } from './checkout';
-import { showThanks } from './thanks';
 
 export const decorateStatusBar = () => {
 	updateCheckoutTo();
-	showThanks();
 };

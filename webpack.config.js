@@ -7,6 +7,10 @@ import UglifyJS from 'uglify-js';
 import CopyPlugin from 'copy-webpack-plugin';
 import HtmlWebpackPlugin from 'html-webpack-plugin';
 import * as packUtils from './scripts/webpack.js';
+import { loadEnvLocal } from './scripts/load-env-local.js';
+import { getContentSecurityPolicy, getHeadersFileContents, getGatewayOrigin } from './scripts/security-headers.js';
+
+loadEnvLocal();
 
 const commitId = cp.execSync('git rev-parse HEAD').toString().trim();
 const staticDir = `static-${commitId.padStart(7, '0').slice(0, 7)}`;
@@ -46,10 +50,39 @@ const devVscodeStatic = [
 export default (env, argv) => {
 	const devMode = argv.mode === 'development';
 	const devVscode = !!process.env.DEV_VSCODE;
-	const ciGithubProxy = devMode && process.env.CI === 'true' && !!process.env.GITHUB_TOKEN;
+	const gatewayOrigin = getGatewayOrigin();
+	const gitlabDomain = process.env.GITLAB_DOMAIN || '';
+	const gatewayApiPrefix = process.env.GATEWAY_API_PREFIX || '/api/gitlab';
+	const gatewaySessionPath = process.env.GATEWAY_SESSION_PATH || '/api/session';
+	const platformOrigin = process.env.PLATFORM_ORIGIN || '';
 	const minifyCSS = (code) => (devMode ? code : new CleanCSS().minify(code).styles);
 	const minifyJS = (code) => (devMode ? code : UglifyJS.minify(code).code);
 	const availableLanguages = devVscode ? [] : fs.readdirSync(path.join(vscodeWebPath, 'nls'));
+	const cspContent = getContentSecurityPolicy();
+
+	const gatewayProxy =
+		devMode && gatewayOrigin
+			? [
+					{
+						context: (pathname) => pathname.startsWith('/api/'),
+						target: gatewayOrigin,
+						changeOrigin: true,
+						followRedirects: false,
+						on: {
+							proxyReq: (proxyReq, req) => {
+								proxyReq.removeHeader('authorization');
+								const launchHeader = req.headers['x-viewer-launch'];
+								if (typeof launchHeader === 'string') {
+									proxyReq.setHeader('X-Viewer-Launch', launchHeader);
+								}
+								if (req.headers.cookie) {
+									proxyReq.setHeader('cookie', req.headers.cookie);
+								}
+							},
+						},
+					},
+				]
+			: [];
 
 	return {
 		mode: env.mode || 'production',
@@ -66,7 +99,12 @@ export default (env, argv) => {
 		plugins: [
 			new CopyPlugin({
 				patterns: [
-					{ from: 'public/_headers', to: '_headers', toType: 'file' },
+					{
+						from: 'public/_headers',
+						to: '_headers',
+						toType: 'file',
+						transform: () => getHeadersFileContents(),
+					},
 					{ from: 'public/favicon*', to: '[name][ext]' },
 					{ from: 'public/manifest.json', to: '[name][ext]' },
 					{ from: 'public/robots.txt', to: '[name][ext]' },
@@ -81,45 +119,39 @@ export default (env, argv) => {
 					spinnerStyle: minifyCSS(fs.readFileSync('./public/spinner.css').toString()),
 					pageTitleScript: minifyJS(fs.readFileSync('./public/page-title.js').toString()),
 					globalScript: minifyJS(packUtils.createGlobalScript(staticDir, devVscode)),
+					cspContent,
 				},
 			}),
 			new webpack.DefinePlugin({
 				DEV_VSCODE: JSON.stringify(devVscode),
-				GITHUB_ORIGIN: JSON.stringify(process.env.GITHUB_DOMAIN || 'https://github.com'),
-				GITLAB_ORIGIN: JSON.stringify(process.env.GITLAB_DOMAIN || 'https://gitlab.com'),
+				GITLAB_ORIGIN: JSON.stringify(gitlabDomain),
+				GATEWAY_ORIGIN: JSON.stringify(gatewayOrigin),
+				GATEWAY_API_PREFIX: JSON.stringify(gatewayApiPrefix),
+				GATEWAY_SESSION_PATH: JSON.stringify(gatewaySessionPath),
+				PLATFORM_ORIGIN: JSON.stringify(platformOrigin),
 				GITHUB1S_EXTENSIONS: JSON.stringify(packUtils.getBuiltinExtensions(devVscode)),
 				AVAILABLE_LANGUAGES: JSON.stringify(availableLanguages),
-				GITHUB_OAUTH_ID: JSON.stringify(process.env.GITHUB_OAUTH_ID || ''),
-				GITLAB_OAUTH_ID: JSON.stringify(process.env.GITLAB_OAUTH_ID || ''),
 			}),
 		],
 		performance: false,
 		devServer: {
-			host: ciGithubProxy ? 'localhost' : undefined,
 			port: 8080,
-			proxy: [
-				{
-					// Used by code search and by CI builds that point GITHUB_API_PREFIX here.
-					context: (pathname, req) => pathname.startsWith('/api/github/'),
-					target: 'https://api.github.com',
-					changeOrigin: true,
-					followRedirects: false,
-					pathRewrite: { '^/api/github': '' },
-					headers: { 'user-agent': 'GitHub1s' },
-					on: {
-						proxyReq: (proxyReq) => {
-							proxyReq.removeHeader('cookie');
-							proxyReq.removeHeader('origin');
-							if (ciGithubProxy) {
-								// Set up credentials for the CI environment to avoid GitHub API rate limits.
-								proxyReq.setHeader('authorization', `Bearer ${process.env.GITHUB_TOKEN}`);
-							}
-						},
-					},
-				},
-			],
+			proxy: gatewayProxy,
+			setupMiddlewares: (middlewares, devServer) => {
+				if (!gatewayOrigin && devServer?.app) {
+					devServer.app.get('/api/session', (req, res) => {
+						const repo = process.env.VIEWER_DEV_REPO;
+						if (!repo) {
+							res.status(401).json({ error: 'unauthorized' });
+							return;
+						}
+						res.json({ repo, ref: process.env.VIEWER_DEV_REF || undefined });
+					});
+				}
+				return middlewares;
+			},
 			liveReload: false,
-			allowedHosts: ciGithubProxy ? 'auto' : 'all',
+			allowedHosts: ['localhost'],
 			client: { overlay: false },
 			devMiddleware: { writeToDisk: true },
 			static: devVscode ? devVscodeStatic : [],

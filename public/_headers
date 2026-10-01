@@ -1,3 +1,2 @@
 /*
-  Cross-Origin-Opener-Policy: same-origin
-  Cross-Origin-Embedder-Policy: credentialless
+  Generated at build time from GATEWAY_ORIGIN and PLATFORM_ORIGIN.

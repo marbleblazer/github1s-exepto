@@ -63,10 +63,12 @@ module.exports = {
 	devtool: 'source-map',
 	plugins: [
 		new webpack.DefinePlugin({
-			GITHUB_ORIGIN: JSON.stringify(process.env.GITHUB_DOMAIN || 'https://github.com'),
-			GITHUB_API_PREFIX: JSON.stringify(process.env.GITHUB_API_PREFIX || 'https://api.github.com'),
-			GITLAB_ORIGIN: JSON.stringify(process.env.GITLAB_DOMAIN || 'https://gitlab.com'),
-			GITLAB_API_PREFIX: JSON.stringify(process.env.GITLAB_API_PREFIX || 'https://gitlab.com/api/v4'),
+			GITLAB_ORIGIN: JSON.stringify(process.env.GITLAB_DOMAIN || ''),
+			GATEWAY_ORIGIN: JSON.stringify(process.env.GATEWAY_ORIGIN || ''),
+			GATEWAY_API_PREFIX: JSON.stringify(process.env.GATEWAY_API_PREFIX || '/api/gitlab'),
+			GITHUB_ORIGIN: JSON.stringify(''),
+			GITHUB_API_PREFIX: JSON.stringify(''),
+			GITLAB_API_PREFIX: JSON.stringify(process.env.GATEWAY_API_PREFIX || '/api/gitlab'),
 		}),
 		new webpack.ProvidePlugin({
 			process: 'process/browser.js',
